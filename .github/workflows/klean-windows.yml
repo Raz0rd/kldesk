@@ -1,0 +1,120 @@
+name: klean-windows
+run-name: klean windows build
+on:
+  workflow_dispatch:
+
+env:
+  RUST_VERSION: "1.75"
+  FLUTTER_VERSION: "3.24.5"
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
+
+jobs:
+  bridge:
+    name: bridge codegen
+    uses: rustdesk/rustdesk/.github/workflows/bridge.yml@master
+
+  build:
+    name: windows template
+    needs: [bridge]
+    runs-on: windows-2022
+    steps:
+      - name: Checkout (fork)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@v4
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Install LLVM
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "15.0.6"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-pc-windows-msvc
+          components: "rustfmt"
+
+      - name: Install flutter
+        uses: subosito/flutter-action@v2.12.0
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Replace engine (rustdesk flutter engine)
+        shell: pwsh
+        run: |
+          flutter doctor -v
+          flutter precache --windows
+          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
+          Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
+          Move-Item -Force windows-x64-release/* C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release/
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-windows-${{ env.VCPKG_COMMIT_ID }}-x64-windows-static
+          restore-keys: |
+            vcpkg-windows-${{ env.VCPKG_COMMIT_ID }}-
+
+      - name: Install vcpkg deps
+        env:
+          VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
+          VCPKG_BINARY_SOURCES: "clear"
+        shell: bash
+        run: |
+          "$VCPKG_ROOT/vcpkg" install --triplet x64-windows-static --x-install-root="$VCPKG_ROOT/installed"
+
+      - name: Save vcpkg cache
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-windows-${{ env.VCPKG_COMMIT_ID }}-x64-windows-static
+
+      - name: Build
+        shell: bash
+        run: |
+          python3 ./build.py --portable --flutter --skip-portable-pack --hwcodec --vram
+          mv ./flutter/build/windows/x64/runner/Release ./rustdesk
+          curl -sL -o usbmmidd_v2.zip https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip
+          python3 -c "import zipfile; zipfile.ZipFile('usbmmidd_v2.zip').extractall('.')"
+          rm -rf usbmmidd_v2/Win32
+          rm -f usbmmidd_v2/deviceinstaller64.exe usbmmidd_v2/deviceinstaller.exe usbmmidd_v2/usbmmidd.bat
+          mv usbmmidd_v2 ./rustdesk
+
+      - name: custom_.txt (padrao do cliente)
+        shell: bash
+        run: |
+          B64=$(python3 -c "import base64,json; print(base64.b64encode(json.dumps({'app-name':'KLDesk'}).encode()).decode())")
+          printf "%s" "$B64" > ./rustdesk/custom_.txt
+
+      - name: Empacotar (packer)
+        shell: bash
+        run: |
+          pushd ./libs/portable
+          pip3 install -r requirements.txt
+          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/kldesk.exe
+          popd
+          mkdir -p ./out
+          cp ./target/release/rustdesk-portable-packer.exe ./out/kldesk-template-x64.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kldesk-template
+          path: out/kldesk-template-x64.exe
