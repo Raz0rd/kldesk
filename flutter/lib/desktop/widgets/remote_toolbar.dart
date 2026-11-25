@@ -285,7 +285,7 @@ class ToolbarState {
       ]);
 
       collapse.value = results[0] ?? false;
-      hide.value = true; // klean: toolbar do rust oculta por padrao
+      hide.value = false; // klean: toolbar de acoes visivel por padrao
     } finally {
       _isInitializing = false;
       initialized.value = true;
