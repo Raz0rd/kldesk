@@ -9,7 +9,7 @@ export 'common/widgets/keyboard_shortcuts/shortcut_constants.dart';
 const int kMaxVirtualDisplayCount = 4;
 const int kAllVirtualDisplay = -1;
 
-const double kDesktopRemoteTabBarHeight = 28.0;
+const double kDesktopRemoteTabBarHeight = 0.0; // klean: sem faixa de titulo na sessao
 const int kInvalidWindowId = -1;
 const int kMainWindowId = 0;
 
