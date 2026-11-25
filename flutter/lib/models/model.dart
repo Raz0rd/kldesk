@@ -880,6 +880,17 @@ class FfiModel with ChangeNotifier {
     final text = translate('Please select the session you want to connect to');
     final type = "";
 
+    // klean: sem dialogo - auto-seleciona a primeira sessao (mesmo default do dialog)
+    try {
+      final list = json.decode(sessions) as List<dynamic>;
+      if (list.isNotEmpty) {
+        bind.sessionSendSelectedSessionId(
+            sessionId: sessionId, sid: list.first['sid'].toString());
+        return;
+      }
+    } catch (e) {
+      debugPrint('klean sessions decode: $e');
+    }
     showWindowsSessionsDialog(
         type, title, text, dialogManager, sessionId, peerId, sessions);
   }
